@@ -12,7 +12,7 @@ const Info = styled.p`
   background-color: black;
   color: white;
   padding: 10px;
-  height: 100px;
+  height: 120px;
   width: 200px;
 `;
 
@@ -21,7 +21,12 @@ const App = () => {
   return (
     <>
       {/* HINT: you can bind to properties in the map store like this: */}
-      <Info>{`Sketch State: ${mapStore.sketchState}`}</Info>
+      <Info>
+        <span>{`Sketch State: ${mapStore.sketchState}`}</span><br></br>
+        <span>{mapStore.canFlyStatus ? `Flight Status: ${mapStore.canFlyStatus}` : ''}</span><br></br>
+        <span>{mapStore.intersectionGeoArea ? `Geodesic area: ${mapStore.intersectionGeoArea} km²` : ''}</span><br></br>
+        <span>{mapStore.intersectionPlanArea ? `Planar area: ${mapStore.intersectionPlanArea} km²` : ''}</span>
+      </Info>
       <Map />
     </>
   );

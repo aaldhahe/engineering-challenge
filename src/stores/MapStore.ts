@@ -3,24 +3,40 @@ import RootStore from './RootStore';
 import ArcGISMap from '@arcgis/core/Map';
 import MapView from '@arcgis/core/views/MapView';
 import Sketch from '@arcgis/core/widgets/Sketch';
-import * as geometryEngine from '@arcgis/core/geometry/geometryEngine';
 import GraphicsLayer from '@arcgis/core/layers/GraphicsLayer';
 import Graphic from '@arcgis/core/Graphic';
 import Polygon from '@arcgis/core/geometry/Polygon';
 import SimpleFillSymbol from '@arcgis/core/symbols/SimpleFillSymbol';
+import Geometry from "@arcgis/core/geometry/Geometry";
+import Color from "@arcgis/core/color";
+import SketchOnMap from '../helpers/sketch/SketchOnMap';
+import { sketchOptions } from '../helpers/sketch';
+import { noFlyZoneSymbol, noFlyZoneGeometry } from '../helpers';
+import SketchEvents from '../helpers/sketch/SketchEvents';
 
 export default class MapStore {
   rootStore: RootStore;
   map!: __esri.Map;
   noFlyLayer!: __esri.GraphicsLayer;
   sketchLayer!: __esri.GraphicsLayer;
-  sketch!: __esri.Sketch;
+  sketch!: SketchOnMap;
   sketchState!: string;
+  intersects!: boolean;
+  canFlyStatus!: string;
+  intersectionGeoArea!: string;
+  intersectionPlanArea!: string;
+  sketchEvents!: SketchEvents;
 
   constructor(rootStore: RootStore) {
     // HINT: you can add additional observable properties to this class
     // https://mobx.js.org/observable-state.html
-    makeObservable(this, { sketchState: observable, setSketchState: action });
+    makeObservable(this, 
+      { 
+        sketchState: observable, setSketchState: action, 
+        canFlyStatus: observable, setCanFlyMessage: action,
+        intersectionGeoArea: observable, setIntersectionGeoArea: action,
+        intersectionPlanArea: observable, setIntersectionPlanArea: action
+      });
     this.rootStore = rootStore;
     this.setSketchState('idle');
   }
@@ -29,41 +45,35 @@ export default class MapStore {
     this.sketchState = state;
   }
 
+  setIntersectionGeoArea(state: string) {
+    this.intersectionGeoArea = state;
+  }
+
+  setIntersectionPlanArea(state: string) {
+    this.intersectionPlanArea = state;
+  }
+
+  setCanFlyMessage(intersect: boolean) {
+    if (!intersect) {
+      this.canFlyStatus = `Approved`;
+      return;
+    }
+    this.canFlyStatus = `Denied`;
+  }
+
   constructMap(container: string) {
     this.sketchLayer = new GraphicsLayer();
     this.noFlyLayer = new GraphicsLayer();
 
     // Define a symbol
     // https://developers.arcgis.com/javascript/latest/api-reference/esri-symbols-SimpleFillSymbol.html
-    const symbol = {
-      type: 'simple-fill',
-      color: [51, 51, 204, 0.2],
-      style: 'solid',
-      outline: {
-        color: 'white',
-        width: 2,
-      },
-    };
+    const symbol = noFlyZoneSymbol;
 
     // Construct map graphic
     // https://developers.arcgis.com/javascript/latest/api-reference/esri-Graphic.html
     this.noFlyLayer.add(
       new Graphic({
-        geometry: new Polygon({
-          spatialReference: { wkid: 102100 },
-          rings: [
-            [
-              [-9278977.502393615, 5196972.662366206],
-              [-9278404.224681476, 5197240.191965203],
-              [-9274505.936238931, 5195673.232885358],
-              [-9275518.726863708, 5190055.1113064],
-              [-9278881.956108259, 5189061.429938688],
-              [-9280869.318843672, 5188660.135540191],
-              [-9282646.479751302, 5192481.986954449],
-              [-9278977.502393615, 5196972.662366206],
-            ],
-          ],
-        }),
+        geometry: new Polygon(noFlyZoneGeometry),
         symbol,
       })
     );
@@ -87,26 +97,32 @@ export default class MapStore {
     // When the view finishes loading, add the sketch widget
     // https://developers.arcgis.com/javascript/latest/api-reference/esri-widgets-Sketch.html
     view.when(() => {
-      this.sketch = new Sketch({
-        layer: this.sketchLayer,
-        view,
-        visibleElements: {
-          createTools: { point: false, polygon: false, polyline: false },
-          selectionTools: { 'lasso-selection': false, 'rectangle-selection': false },
-          settingsMenu: false,
-          undoRedoMenu: false,
-        },
-        creationMode: 'update', // graphic will be selected as soon as it is created
-      });
-      view.ui.add(this.sketch, 'top-right');
+      this.sketch = new SketchOnMap(
+        sketchOptions(view, this.sketchLayer)
+      );
 
-      this.sketch.on('create', this.sketchCreate);
+      this.sketchEvents = new SketchEvents(this.noFlyLayer, this.sketchLayer);
+      this.sketch.addUI(view, 'top-right');
+      this.sketch.setEvents('create', this.sketchCreate);
+      this.sketch.setEvents('update', this.sketchUpdate);
     });
   }
 
+  sketchUpdate = async (event: __esri.SketchUpdateEvent) => {
+    console.log('update: ', event);
+    this.setSketchState(event.state);
+  }
+
   sketchCreate = async (event: __esri.SketchCreateEvent) => {
+    // Debug Statement
     this.setSketchState(event.state);
     if (event.state !== 'complete') return;
+    else {
+        const areaOpt = await this.sketchEvents.sketchCreate(event);
+        this.setIntersectionGeoArea(`${areaOpt.geoArea}`);
+        this.setIntersectionPlanArea(`${areaOpt.planArea}`);
+        this.setCanFlyMessage(areaOpt.intersect);
+    }
 
     // THERE ARE 3 STEPS TO SATISFYING THE BASE REQUIREMENTS FOR THE CHALLENGE
     // STEP 1: determine if the sketch's graphic intersects with the graphic in the noFlyLayer
