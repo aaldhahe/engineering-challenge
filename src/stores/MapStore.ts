@@ -2,13 +2,9 @@ import { action, makeObservable, observable } from 'mobx';
 import RootStore from './RootStore';
 import ArcGISMap from '@arcgis/core/Map';
 import MapView from '@arcgis/core/views/MapView';
-import Sketch from '@arcgis/core/widgets/Sketch';
 import GraphicsLayer from '@arcgis/core/layers/GraphicsLayer';
 import Graphic from '@arcgis/core/Graphic';
 import Polygon from '@arcgis/core/geometry/Polygon';
-import SimpleFillSymbol from '@arcgis/core/symbols/SimpleFillSymbol';
-import Geometry from "@arcgis/core/geometry/Geometry";
-import Color from "@arcgis/core/color";
 import SketchOnMap from '../helpers/sketch/SketchOnMap';
 import { sketchOptions } from '../helpers/sketch';
 import { noFlyZoneSymbol, noFlyZoneGeometry } from '../helpers';
@@ -19,6 +15,7 @@ export default class MapStore {
   map!: __esri.Map;
   noFlyLayer!: __esri.GraphicsLayer;
   sketchLayer!: __esri.GraphicsLayer;
+  intersectionMap!: Map<__esri.Graphic, __esri.Graphic>;
   sketch!: SketchOnMap;
   sketchState!: string;
   intersects!: boolean;
@@ -39,6 +36,7 @@ export default class MapStore {
       });
     this.rootStore = rootStore;
     this.setSketchState('idle');
+    this.intersectionMap = new Map<__esri.Graphic, __esri.Graphic>();
   }
 
   setSketchState(state: string) {
@@ -101,28 +99,30 @@ export default class MapStore {
         sketchOptions(view, this.sketchLayer)
       );
 
-      this.sketchEvents = new SketchEvents(this.noFlyLayer, this.sketchLayer);
+      this.sketchEvents = new SketchEvents(this.noFlyLayer, this.sketchLayer, this.intersectionMap);
       this.sketch.addUI(view, 'top-right');
-      this.sketch.setEvents('create', this.sketchCreate);
-      this.sketch.setEvents('update', this.sketchUpdate);
+      this.sketch.setEvents(SketchEvents.CREATE, this.sketchCreate);
+      this.sketch.setEvents(SketchEvents.UPDATE, this.sketchUpdate);
     });
   }
 
   sketchUpdate = async (event: __esri.SketchUpdateEvent) => {
     console.log('update: ', event);
     this.setSketchState(event.state);
+    if (event.state !== 'active') return;
+    await this.sketchEvents.sketchUpdate(event);
   }
 
   sketchCreate = async (event: __esri.SketchCreateEvent) => {
-    // Debug Statement
+    console.log('create: ', event);
     this.setSketchState(event.state);
     if (event.state !== 'complete') return;
-    else {
-        const areaOpt = await this.sketchEvents.sketchCreate(event);
-        this.setIntersectionGeoArea(`${areaOpt.geoArea}`);
-        this.setIntersectionPlanArea(`${areaOpt.planArea}`);
-        this.setCanFlyMessage(areaOpt.intersect);
-    }
+    
+    const areaOpt = await this.sketchEvents.sketchCreate(event);
+    this.setIntersectionGeoArea(`${areaOpt.geodesic}`);
+    this.setIntersectionPlanArea(`${areaOpt.planar}`);
+    this.setCanFlyMessage(areaOpt.intersect);
+    
 
     // THERE ARE 3 STEPS TO SATISFYING THE BASE REQUIREMENTS FOR THE CHALLENGE
     // STEP 1: determine if the sketch's graphic intersects with the graphic in the noFlyLayer

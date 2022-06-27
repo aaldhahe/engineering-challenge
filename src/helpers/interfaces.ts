@@ -1,6 +1,3 @@
-import Color from "@arcgis/core/Color";
-import Geometry from "@arcgis/core/geometry/Geometry";
-
 export interface Outline {
     color: string;
     width: number;
@@ -13,8 +10,11 @@ export interface Symbols {
     outline: Outline;
 }
 
-export interface AreaAndIntersectOpt {
-    geoArea: number | string;
-    planArea: number | string;
+export interface AreaAndIntersectOpt extends AreaOpt {
     intersect: boolean;
+}
+
+export interface AreaOpt {
+    planar: string;
+    geodesic: string;
 }
