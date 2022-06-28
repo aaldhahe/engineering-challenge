@@ -3,12 +3,16 @@
   "version": "1.0.0",
   "main": "index.js",
   "license": "MIT",
+  "private": true,
+  "homepage": "https://aaldhahe.github.io",
   "scripts": {
     "start": "webpack serve",
     "build": "NODE_ENV=production webpack",
     "lint": "eslint . --ext .ts,.tsx",
     "test": "jest",
-    "prettier": "prettier --config ./prettier.config.js --loglevel warn --write src/**/*.*"
+    "prettier": "prettier --config ./prettier.config.js --loglevel warn --write src/**/*.*",
+    "predeploy": "yarn build",
+    "deploy": "gh-pages -d build"
   },
   "dependencies": {
     "@arcgis/core": "^4.20.2",
@@ -53,6 +57,7 @@
     "eslint": "^7.31.0",
     "eslint-plugin-react": "^7.24.0",
     "file-loader": "^6.2.0",
+    "gh-pages": "^4.0.0",
     "html-webpack-plugin": "^5.3.2",
     "jest": "^27.0.6",
     "less": "^4.1.1",
