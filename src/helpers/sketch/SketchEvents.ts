@@ -2,7 +2,6 @@ import { AreaAndIntersectOpt, AreaOpt, GraphicHashMapAndLayer } from "helpers/in
 import Graphic from "@arcgis/core/Graphic";
 import { intersectionZoneSymbol } from "../symbol";
 import GeometryOnMap from "../geometry/GeometryOnMap";
-import Constants from "helpers/constants";
 
 export default class SketchEvents {
     //#region private fields
@@ -15,6 +14,7 @@ export default class SketchEvents {
     public static readonly CREATE: string = 'create';
     public static readonly UPDATE: string = 'update';
     public static readonly STATE_COMPLETE: string = 'complete';
+    public static readonly STATE_ACTIVE: string = 'active';
     public static readonly STATE_START: string = 'start';
     //#endregion
 
@@ -28,35 +28,16 @@ export default class SketchEvents {
     
     //#region Sketch Create
     sketchCreate = async (event: __esri.SketchCreateEvent): Promise<AreaAndIntersectOpt> => {
-        const index = this.sketchLayer.graphics.length - 1; // intersection shape will be at this index
-        console.log(`index: `, index);
-        console.log(this.sketchLayer.graphics);
-        let area: AreaOpt = {
+        let areaAndIntersect: AreaAndIntersectOpt = {
             geodesic: '',
-            planar: ''
-        };
-        let intersection = false;
+            planar: '',
+            intersect: false
+        }
         this.noFlyLayer.graphics.forEach(graphic => {
-            const geometry = GeometryOnMap.intersects(graphic.geometry, event.graphic.geometry);
-            if (geometry) {
-                // This code can be improved to handle geometries array as well, but for sake of this 
-                // challenge we know it will only have one geometry intersection
-                intersection = true;
-                area = GeometryOnMap.geodesicAndPlanarAreas(geometry);
-                const graphic = new Graphic({
-                    geometry: geometry,
-                    symbol: intersectionZoneSymbol
-                });
-                this.intersectionMap.set(event.graphic, graphic);
-                this.sketchLayer.add(graphic);
-            }
+            areaAndIntersect = this.checkForIntersectionAndComputeArea(graphic, event.graphic);
         });
 
-        return {
-            geodesic: area.geodesic,
-            planar: area.planar,
-            intersect: intersection
-        }
+        return areaAndIntersect;
     }
     //#endregion
 
@@ -68,33 +49,71 @@ export default class SketchEvents {
             graphicForLayerAndHashMap = this.determineCorrespondingIntersectionShape(event.graphics);
         }
         
-        // while we move the shape around, check
+        // while we move the shape around, check for intersection shape that corresponds to the shape
+        // currently updating
         if (graphicForLayerAndHashMap && graphicForLayerAndHashMap.hashMap) {
             this.removeIntersectionShape(graphicForLayerAndHashMap.layer, graphicForLayerAndHashMap.hashMap);
         }
         
-        if (event.state === SketchEvents.STATE_COMPLETE) {
-
+        let areaAndIntersect: AreaAndIntersectOpt = {
+            geodesic: '',
+            planar: '',
+            intersect: false
         }
-        return {} as AreaAndIntersectOpt;
+
+        event.graphics.forEach(graphic => {
+            // Only supporting single select update, not multi-select.
+            // Therefore, assuming user will only select one shape to update at a time
+            areaAndIntersect = this.checkForIntersectionAndComputeArea(this.noFlyLayer.graphics.getItemAt(0), graphic)
+        });
+        return areaAndIntersect;
     }
     //#endregion
 
+    checkForIntersectionAndComputeArea = (graphic1: __esri.Graphic, graphic2: __esri.Graphic): AreaAndIntersectOpt => {
+        const geometry = GeometryOnMap.intersects(graphic1.geometry, graphic2.geometry);
+        let intersection = false,
+            area: AreaOpt = {
+                geodesic: '',
+                planar: ''
+            };
+        if (geometry) {
+            intersection = true;
+            area = GeometryOnMap.geodesicAndPlanarAreas(geometry);
+            const graphic = new Graphic({
+                geometry: geometry,
+                symbol: intersectionZoneSymbol
+            });
+            this.intersectionMap.set(graphic2, graphic);
+            this.sketchLayer.add(graphic);
+        }
+        return {
+            intersect: intersection,
+            geodesic: area.geodesic,
+            planar: area.planar
+        };
+    }
+
     removeIntersectionShape = (removeFromLayer: __esri.Graphic, removeFromHashMap: __esri.Graphic): void => {
+        // HashMap to access corresponding intersection for the shape, Time complexity O(1)
+        // We want to remove the intersection shape from the sketch layer
+        // And also remove the current shape we are updating from being a key in intersection hashmap
+        // Because we just removed the intersection from the sketch layer
         this.sketchLayer.remove(removeFromLayer);
         this.intersectionMap.delete(removeFromHashMap);
     }
 
-    determineCorrespondingIntersectionShape(graphics: __esri.Graphic[]): GraphicHashMapAndLayer {
-        let graphicForLayerAndHashMap!: GraphicHashMapAndLayer;
+    determineCorrespondingIntersectionShape = (graphics: __esri.Graphic[]): GraphicHashMapAndLayer => {
+        let graphicForLayerAndHashMap = {} as GraphicHashMapAndLayer;
         for (let i = 0; i < graphics.length; i++) {
             const graphic = this.intersectionMap.get(graphics[i]);
             if (graphic) {
-                graphicForLayerAndHashMap.layer = graphics[i];
-                graphicForLayerAndHashMap.hashMap = graphic;
+                graphicForLayerAndHashMap.hashMap = graphics[i];
+                graphicForLayerAndHashMap.layer = graphic;
                 break;
             } 
         }
         return graphicForLayerAndHashMap;
     }
+
 }

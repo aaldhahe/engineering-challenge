@@ -27,13 +27,16 @@ export default class MapStore {
   constructor(rootStore: RootStore) {
     // HINT: you can add additional observable properties to this class
     // https://mobx.js.org/observable-state.html
-    makeObservable(this, 
-      { 
-        sketchState: observable, setSketchState: action, 
-        canFlyStatus: observable, setCanFlyMessage: action,
-        intersectionGeoArea: observable, setIntersectionGeoArea: action,
-        intersectionPlanArea: observable, setIntersectionPlanArea: action
-      });
+    makeObservable(this, {
+      sketchState: observable,
+      setSketchState: action,
+      canFlyStatus: observable,
+      setCanFlyMessage: action,
+      intersectionGeoArea: observable,
+      setIntersectionGeoArea: action,
+      intersectionPlanArea: observable,
+      setIntersectionPlanArea: action,
+    });
     this.rootStore = rootStore;
     this.setSketchState('idle');
     this.intersectionMap = new Map<__esri.Graphic, __esri.Graphic>();
@@ -95,9 +98,7 @@ export default class MapStore {
     // When the view finishes loading, add the sketch widget
     // https://developers.arcgis.com/javascript/latest/api-reference/esri-widgets-Sketch.html
     view.when(() => {
-      this.sketch = new SketchOnMap(
-        sketchOptions(view, this.sketchLayer)
-      );
+      this.sketch = new SketchOnMap(sketchOptions(view, this.sketchLayer));
 
       this.sketchEvents = new SketchEvents(this.noFlyLayer, this.sketchLayer, this.intersectionMap);
       this.sketch.addUI(view, 'top-right');
@@ -109,20 +110,24 @@ export default class MapStore {
   sketchUpdate = async (event: __esri.SketchUpdateEvent) => {
     console.log('update: ', event);
     this.setSketchState(event.state);
-    if (event.state !== 'active') return;
-    await this.sketchEvents.sketchUpdate(event);
-  }
+    if (event.state === SketchEvents.STATE_START) return;
+    console.log(`calling update in sketch events`);
+    const areaOpt = await this.sketchEvents.sketchUpdate(event);
+    this.setIntersectionGeoArea(`${areaOpt.geodesic}`);
+    this.setIntersectionPlanArea(`${areaOpt.planar}`);
+    this.setCanFlyMessage(areaOpt.intersect);
+  };
 
   sketchCreate = async (event: __esri.SketchCreateEvent) => {
     console.log('create: ', event);
     this.setSketchState(event.state);
-    if (event.state !== 'complete') return;
-    
+    if (event.state !== SketchEvents.STATE_COMPLETE) return;
+
     const areaOpt = await this.sketchEvents.sketchCreate(event);
+    console.log(`areaOpt create: `, areaOpt);
     this.setIntersectionGeoArea(`${areaOpt.geodesic}`);
     this.setIntersectionPlanArea(`${areaOpt.planar}`);
     this.setCanFlyMessage(areaOpt.intersect);
-    
 
     // THERE ARE 3 STEPS TO SATISFYING THE BASE REQUIREMENTS FOR THE CHALLENGE
     // STEP 1: determine if the sketch's graphic intersects with the graphic in the noFlyLayer
